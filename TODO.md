@@ -1,12 +1,12 @@
 ## TODO List
 
-### 1. 模型搭建
+### 1. 模型搭建 -- Mu He
 - [ ] 搭建 Qwen + Mask2Former 组合模型
   - 参考 LISA 范式设计整体架构
   - 不使用 LISA 的 Visual Encoder，改为采用 Qwen 内置的 Visual Model
   - 保证 Visual Encoder 和 Qwen 模块的接口兼容
 
-### 2. 数据集与 Prompt 调整
+### 2. 数据集与 Prompt 调整 -- Dingyi Zhou
 - [ ] 参考 LISA 的训练数据集
   - 结合 LISA 输出的 Text Token、Mask 结果
   - 整合 LISA Prompt 结构与 Qwen Prompt 格式
