@@ -153,7 +153,10 @@ def load_model(
         elif is_trainable:
             model = load_unsloth_pretrained_model(config, model_args, finetuning_args)
 
-    if model is None and not lazy_load:
+    if getattr(model_args, "model_type", None) == "vlm_seg":
+        from .vlm_seg import build_vlm_seg_model
+        model = build_vlm_seg_model(config)
+    elif model is None and not lazy_load:
         init_kwargs["config"] = config
         init_kwargs["pretrained_model_name_or_path"] = model_args.model_name_or_path
 

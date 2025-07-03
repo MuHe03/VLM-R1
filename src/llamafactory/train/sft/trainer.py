@@ -30,6 +30,7 @@ from ...extras.constants import IGNORE_INDEX
 from ...extras.packages import is_transformers_version_greater_than
 from ..callbacks import SaveProcessorCallback
 from ..trainer_utils import create_custom_optimizer, create_custom_scheduler
+from open_r1.utils.loss import dice_loss
 
 
 if TYPE_CHECKING:
@@ -163,3 +164,24 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         with open(output_prediction_file, "w", encoding="utf-8") as f:
             for text, pred, label in zip(decoded_inputs, decoded_preds, decoded_labels):
                 f.write(json.dumps({"prompt": text, "predict": pred, "label": label}, ensure_ascii=False) + "\n")
+
+
+class SegmentationTrainer(CustomSeq2SeqTrainer):
+    def compute_loss(self, model, inputs, return_outputs=False):
+        pixel_values = inputs.get("pixel_values", None) or inputs.get("images", None)
+        masks = inputs.get("masks", None)
+        class_labels = inputs.get("class_labels", None)
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
+        labels = inputs.get("labels", None)
+
+        outputs = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            pixel_values=pixel_values,
+            masks=masks,
+            class_labels=class_labels,
+            labels=labels,
+        )
+        loss = outputs.loss
+        return (loss, outputs) if return_outputs else loss
