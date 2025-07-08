@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 # Copyright 2025 HuggingFace Inc. and the LlamaFactory team.
 #
 # This code is inspired by the HuggingFace's transformers library.
@@ -15,35 +18,43 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, List
+from transformers.trainer_callback import TrainerCallback
 
-from ...data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
-from ...extras.constants import IGNORE_INDEX
-from ...extras.logging import get_logger
-from ...extras.misc import calculate_tps
-from ...extras.ploting import plot_loss
-from ...model import load_model, load_tokenizer
-from ..trainer_utils import create_modelcard_and_push
-from .metric import ComputeAccuracy, ComputeSimilarity, eval_logit_processor
-from .trainer import CustomSeq2SeqTrainer, SegmentationTrainer
+from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
+from llamafactory.hparams import (
+    ModelArguments,
+    DataArguments,
+    TrainingArguments,
+    FinetuningArguments,
+    GeneratingArguments,
+)
+from llamafactory.train.utils import (
+    create_modelcard_and_push,
+    load_model,
+    load_tokenizer,
+    plot_loss,
+    get_logits_processor,
+    calculate_tps,
+)
+from llamafactory.train.trainer import CustomSeq2SeqTrainer, SegmentationTrainer
+from llamafactory.train.metric import ComputeAccuracy, ComputeSimilarity
 
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
-
-    from ...hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
 
 
 logger = get_logger(__name__)
 
 
 def run_sft(
-    model_args: "ModelArguments",
-    data_args: "DataArguments",
-    training_args: "Seq2SeqTrainingArguments",
-    finetuning_args: "FinetuningArguments",
-    generating_args: "GeneratingArguments",
-    callbacks: Optional[list["TrainerCallback"]] = None,
+    model_args: ModelArguments,
+    data_args: DataArguments,
+    training_args: TrainingArguments,
+    finetuning_args: FinetuningArguments,
+    generating_args: GeneratingArguments,
+    callbacks: Optional[List[TrainerCallback]] = None
 ):
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]

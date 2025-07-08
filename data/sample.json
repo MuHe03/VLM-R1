@@ -1,0 +1,17 @@
+[
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "<image>\nPlease segment the bottles behind guy on left in this image."
+      },
+      {
+        "role": "assistant",
+        "content": "```json\n[{\"rle_mask\":{\"counts\":\"ha`0b0c:>gE[OW9]1M2O2M2O001O100O001O10O010O0100O01000000O01000001O003M1O0000010O0000000000000000000000O101N1O1O2M2N3J6E;K5N2N3N2M5L4K7JB>K5N2N2N2O1O1O1O01001N10000000000100O3N7H8I5L2M35J7H1O00O0001N001O0001O000O100N2O1O1O1N2O1O2M2N2O2M2N3LQS`3\",\"size\":[360,480]},\"text\":\"Sure, [SEG].\"}]\n```"
+      }
+    ],
+    "images": [
+      "/dss/dssmcmlfs01/pn39qo/pn39qo-dss-0000/di97fer/datasets_r1/datasests_lisa/refer_seg/images/saiapr_tc-12/12/images/12847.jpg"
+    ]
+  }
+]

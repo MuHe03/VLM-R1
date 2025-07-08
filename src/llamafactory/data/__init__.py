@@ -21,7 +21,40 @@ from .collator import (
 from .data_utils import Role, split_dataset
 from .loader import get_dataset
 from .template import TEMPLATES, Template, get_template_and_fix_tokenizer
+from typing import TYPE_CHECKING, Dict
+from llamafactory.extras.logging import get_logger
+from llamafactory.extras.template import Template
+from .custom_dataset import get_custom_dataset
 
+if TYPE_CHECKING:
+    from torch.utils.data import Dataset
+
+logger = get_logger(__name__)
+
+def get_dataset(
+    dataset_info: Dict,
+    dataset_path: str,
+    template: Template,
+    **kwargs
+) -> Dict[str, "Dataset"]:
+    """
+    根据数据集类型获取相应的数据集。
+
+    Args:
+        dataset_info (Dict): 数据集配置信息
+        dataset_path (str): 数据集路径
+        template (Template): 模板对象
+        **kwargs: 其他参数
+
+    Returns:
+        Dict[str, Dataset]: 包含训练集的字典
+    """
+    dataset_type = dataset_info.get("type", "custom")
+    
+    if dataset_type == "custom":
+        return get_custom_dataset(dataset_path, template, **kwargs)
+    else:
+        raise ValueError(f"Unsupported dataset type: {dataset_type}")
 
 __all__ = [
     "TEMPLATES",

@@ -714,5 +714,10 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "custom_dataset": {
+    "file_name": "sample.json",
+    "type": "multi_turn",
+    "ranking": false
   }
 }
