@@ -70,7 +70,6 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         self.seg_config = full_model.config
         self.seg_decoder = full_model.model.transformer_module.decoder
         self.class_predictor = full_model.class_predictor
-        self.mask_embedder   = full_model.model.transformer_module.decoder.mask_predictor.mask_embedder
 
         hid = self.seg_config.hidden_dim
         lm_dim = config.hidden_size 
@@ -223,7 +222,7 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         )
 
         class_logits = self.class_predictor(dec_out.last_hidden_state)
-        mask_embeds  = self.mask_embedder(dec_out.last_hidden_state)
+        mask_embeds  = self.seg_decoder.mask_predictor.mask_embedder(dec_out.last_hidden_state)
         seg_logits   = torch.einsum("bqc,bchw->bqhw", mask_embeds, mask_features)
 
         if seg_logits.shape[-2:] != pixel_values.shape[-2:]:
