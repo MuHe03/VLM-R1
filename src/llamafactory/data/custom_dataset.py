@@ -9,7 +9,7 @@ from torch.utils.data import Dataset as TorchDataset
 import pycocotools.mask as mask_util
 
 from llamafactory.extras.logging import get_logger
-from llamafactory.extras.template import Template
+from llamafactory.data.template import Template
 
 logger = get_logger(__name__)
 

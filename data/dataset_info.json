@@ -167,8 +167,8 @@
     "hf_hub_url": "Open-Orca/OpenOrca",
     "ms_hub_url": "AI-ModelScope/OpenOrca",
     "columns": {
-      "prompt": "question",
-      "response": "response",
+      "prompt": "conversations",
+      "response": "conversations",
       "system": "system_prompt"
     }
   },
@@ -716,7 +716,19 @@
     "folder": "python"
   },
   "custom_dataset": {
-    "file_name": "sample.json",
+    "file_name": "Qwen_seg_sft_train.json",
+    "formatting": "segmentation",
+    "columns": {
+      "prompt": "messages",
+      "response": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    },
     "type": "multi_turn",
     "ranking": false
   }

@@ -227,9 +227,57 @@ class SharegptDatasetConverter(DatasetConverter):
         return output
 
 
+class SegmentationDatasetConverter(DatasetConverter):
+    def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
+        """Convert a single example in the segmentation dataset to the standard format.
+        
+        The input example should have the following structure:
+        {
+            "conversations": [
+                {"role": "user", "content": "..."},
+                {"role": "assistant", "content": "..."}
+            ],
+            "images": ["path/to/image.jpg"],
+            "masks": [np.array]  # Optional, can be empty
+        }
+        """
+        # Get conversations, images, and masks from the example
+        conversations = example.get(self.dataset_attr.prompt, [])
+        images = example.get(self.dataset_attr.images, [])
+        masks = example.get("masks", [])
+        
+        # Process conversations into prompt and response
+        prompt = []
+        response = []
+        
+        # Extract all user and assistant messages
+        for message in conversations:
+            role = message.get("role", "").lower()
+            content = message.get("content", "")
+            if role == "user":
+                prompt.append({"role": Role.USER.value, "content": content})
+            elif role == "assistant":
+                response.append({"role": Role.ASSISTANT.value, "content": content})
+        
+        # Prepare the output in the expected format
+        output = {
+            "_prompt": prompt,
+            "_response": response,
+            "_system": "",  # No system message in custom dataset
+            "_tools": "",   # No tools in custom dataset
+            "_images": self._find_medias(images) if images else None,
+            "_masks": masks if masks else None,
+            "_videos": None,  # No videos in custom dataset
+            "_audios": None,  # No audios in custom dataset
+        }
+        
+        return output
+
+
 DATASET_CONVERTERS = {
     "alpaca": AlpacaDatasetConverter,
     "sharegpt": SharegptDatasetConverter,
+    "segmentation": SegmentationDatasetConverter,
 }
 
 

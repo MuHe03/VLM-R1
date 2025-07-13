@@ -50,8 +50,8 @@ from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer, SegmentationTra
 from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity
 
 
-if TYPE_CHECKING:
-    from transformers import Seq2SeqTrainingArguments, TrainerCallback
+# if TYPE_CHECKING:
+from transformers import Seq2SeqTrainingArguments, TrainerCallback
 # [DEBUG: dyzhou]: import get_logger from llamafactory.extras.logging
 from ...extras.logging import get_logger
 
