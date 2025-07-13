@@ -31,31 +31,31 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-def get_dataset(
-    dataset_info: Dict,
-    dataset_path: str,
-    template: Template,
-    **kwargs
-) -> Dict[str, "Dataset"]:
-    """
-    根据数据集类型获取相应的数据集。
+# def get_dataset(
+#     dataset_info: Dict,
+#     dataset_path: str,
+#     template: Template,
+#     **kwargs
+# ) -> Dict[str, "Dataset"]:
+#     """
+#     根据数据集类型获取相应的数据集。
 
-    Args:
-        dataset_info (Dict): 数据集配置信息
-        dataset_path (str): 数据集路径
-        template (Template): 模板对象
-        **kwargs: 其他参数
+#     Args:
+#         dataset_info (Dict): 数据集配置信息
+#         dataset_path (str): 数据集路径
+#         template (Template): 模板对象
+#         **kwargs: 其他参数
 
-    Returns:
-        Dict[str, Dataset]: 包含训练集的字典
-    """
-    dataset_type = dataset_info.get("type", "custom")
+#     Returns:
+#         Dict[str, Dataset]: 包含训练集的字典
+#     """
+#     dataset_type = dataset_info.get("type", "custom")
     
-    if dataset_type == "custom":
-        return get_custom_dataset(dataset_path, template, **kwargs)
-    else:
-        raise ValueError(f"Unsupported dataset type: {dataset_type}")
-
+#     if dataset_type == "custom":
+#         return get_custom_dataset(dataset_path, template, **kwargs)
+#     else:
+#         raise ValueError(f"Unsupported dataset type: {dataset_type}")
+# [DEBUG: dyzhou]: remove the custom get_dataset function since we're using the one from loader.py
 __all__ = [
     "TEMPLATES",
     "KTODataCollatorWithPadding",

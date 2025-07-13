@@ -46,6 +46,8 @@ def create_top() -> dict[str, "Component"]:
         template = gr.Dropdown(choices=list(TEMPLATES.keys()), value="default")
         rope_scaling = gr.Dropdown(choices=["none", "linear", "dynamic", "yarn", "llama3"], value="none")
         booster = gr.Dropdown(choices=["auto", "flashattn2", "unsloth", "liger_kernel"], value="auto")
+        #[DEBUG:dyzhou] add model type for vlm_seg
+        model_type = gr.Dropdown(choices=["default", "vlm_seg"], value="default", label="Model Type")
 
     model_name.change(get_model_info, [model_name], [model_path, template], queue=False).then(
         list_checkpoints, [model_name, finetuning_type], [checkpoint_path], queue=False
@@ -69,4 +71,5 @@ def create_top() -> dict[str, "Component"]:
         template=template,
         rope_scaling=rope_scaling,
         booster=booster,
+        model_type=model_type, #[DEBUG:dyzhou] add model type dropdown
     )

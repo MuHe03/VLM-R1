@@ -1,0 +1,1 @@
+llamafactory-cli train examples/train_full/vlm_seg_full_sft.yaml

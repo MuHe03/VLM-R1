@@ -30,8 +30,9 @@ from ...extras.constants import IGNORE_INDEX
 from ...extras.packages import is_transformers_version_greater_than
 from ..callbacks import SaveProcessorCallback
 from ..trainer_utils import create_custom_optimizer, create_custom_scheduler
-from open_r1.utils.loss import dice_loss
-
+#[DEBUG/dyzhou]: import dice_loss from vlm_seg.py
+#from open_r1.utils.loss import dice_loss
+from ...model.vlm_seg import dice_loss
 
 if TYPE_CHECKING:
     from torch.utils.data import Dataset

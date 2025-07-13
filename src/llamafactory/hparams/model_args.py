@@ -405,6 +405,48 @@ class ModelArguments(
         init=False,
         metadata={"help": "Whether use block diag attention or not, derived from `neat_packing`. Do not specify it."},
     )
+    # [DEBUG:dyzhou] add segmentation-specific arguments
+    # segmentation-specific arguments
+    model_type: Optional[str] = field(
+        default=None,
+        metadata={"help": "Type of model, e.g., vlm_seg"}
+    )
+    seg_token_idx: Optional[int] = field(
+        default=None,
+        metadata={"help": "Special segmentation token index"}
+    )
+    use_rle_masks: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether to use RLE masks"}
+    )
+    mask_format: Optional[str] = field(
+        default="rle",
+        metadata={"help": "Mask format: rle/polygon/binary"}
+    )
+    output_format: Optional[str] = field(
+        default="rle",
+        metadata={"help": "Output format: rle/polygon/binary"}
+    )
+    mask_threshold: Optional[float] = field(
+        default=0.5,
+        metadata={"help": "Threshold for mask binarization"}
+    )
+    label_encoding: Optional[str] = field(
+        default="binary",
+        metadata={"help": "Label encoding: binary/categorical"}
+    )
+    num_classes: Optional[int] = field(
+        default=1,
+        metadata={"help": "Number of segmentation classes"}
+    )
+    ignore_label: Optional[int] = field(
+        default=255,
+        metadata={"help": "Label value to ignore"}
+    )
+    seg_decoder_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to segmentation decoder"}
+    )
 
     def __post_init__(self):
         BaseModelArguments.__post_init__(self)

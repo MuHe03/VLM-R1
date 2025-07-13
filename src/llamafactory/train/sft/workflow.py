@@ -19,7 +19,6 @@
 # limitations under the License.
 
 from typing import TYPE_CHECKING, Optional, List
-from transformers.trainer_callback import TrainerCallback
 
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from llamafactory.hparams import (
@@ -29,21 +28,32 @@ from llamafactory.hparams import (
     FinetuningArguments,
     GeneratingArguments,
 )
+# [DEBUG: dyzhou]: import missing constants and functions
+from llamafactory.extras.constants import IGNORE_INDEX
+from llamafactory.train.sft.metric import eval_logit_processor
+# [DEBUG: dyzhou]: remove the following imports
 from llamafactory.train.utils import (
-    create_modelcard_and_push,
-    load_model,
-    load_tokenizer,
+    #create_modelcard_and_push,
+    #load_model,
+    #load_tokenizer,
     plot_loss,
-    get_logits_processor,
+    #get_logits_processor,
     calculate_tps,
 )
-from llamafactory.train.trainer import CustomSeq2SeqTrainer, SegmentationTrainer
-from llamafactory.train.metric import ComputeAccuracy, ComputeSimilarity
+from llamafactory.train.trainer_utils import create_modelcard_and_push
+from ...extras.misc import get_logits_processor
+from ...model.loader import load_model, load_tokenizer
+# [DEBUG: dyzhou]: remove the following imports
+#from llamafactory.train.trainer import CustomSeq2SeqTrainer, SegmentationTrainer
+from llamafactory.train.sft.trainer import CustomSeq2SeqTrainer, SegmentationTrainer
+# [DEBUG: dyzhou]: import ComputeAccuracy and ComputeSimilarity from llamafactory.train.sft.metric
+from llamafactory.train.sft.metric import ComputeAccuracy, ComputeSimilarity
 
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
-
+# [DEBUG: dyzhou]: import get_logger from llamafactory.extras.logging
+from ...extras.logging import get_logger
 
 logger = get_logger(__name__)
 

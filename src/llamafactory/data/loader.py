@@ -32,6 +32,8 @@ from .processor import (
     SupervisedDatasetProcessor,
     UnsupervisedDatasetProcessor,
 )
+# [DEBUG: dyzhou]: import custom dataset functions
+from .custom_dataset import get_custom_dataset, load_custom_dataset
 
 
 if TYPE_CHECKING:
@@ -87,6 +89,13 @@ def _load_single_dataset(
 
         if any(data_path != FILEEXT2TYPE.get(os.path.splitext(data_file)[-1][1:], None) for data_file in data_files):
             raise ValueError("File types should be identical.")
+
+    elif dataset_attr.load_from == "custom":
+        # [DEBUG: dyzhou]: handle custom dataset type
+        data_path = os.path.join(data_args.dataset_dir, dataset_attr.dataset_name)
+        if not os.path.isfile(data_path):
+            raise ValueError(f"Custom dataset file {data_path} not found.")
+
     else:
         raise NotImplementedError(f"Unknown load type: {dataset_attr.load_from}.")
 
@@ -127,6 +136,15 @@ def _load_single_dataset(
         )
     elif dataset_attr.load_from == "cloud_file":
         dataset = Dataset.from_list(read_cloud_json(data_path), split=dataset_attr.split)
+    elif dataset_attr.load_from == "custom":
+        # [DEBUG: dyzhou]: load custom dataset
+        from ..extras.template import Template
+        # Create a dummy template for custom dataset loading
+        # The actual template will be applied during preprocessing
+        dummy_template = Template()
+        dataset = load_custom_dataset(data_path, dummy_template)
+
+    
     else:
         dataset = load_dataset(
             path=data_path,

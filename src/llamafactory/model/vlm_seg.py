@@ -1,9 +1,11 @@
-from transformers import Qwen2_5_VLForConditionalGeneration, ModelOutput, Mask2FormerForUniversalSegmentation
-from transformers.utils import logging
+from transformers import Qwen2_5_VLForConditionalGeneration,  Mask2FormerForUniversalSegmentation
+# [DEBUG/dyzhou]: import ModelOutput from transformers.utils
+from transformers.utils import logging, ModelOutput
 from torch import nn
 import torch
 import torch.nn.functional as F
-from open_r1.utils.loss import dice_loss
+# [DEBUG/dyzhou]:
+#from open_r1.utils.loss import dice_loss
 
 logger = logging.get_logger(__name__)
 

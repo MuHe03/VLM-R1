@@ -52,6 +52,8 @@ logger = logging.get_logger(__name__)
 def _training_function(config: dict[str, Any]) -> None:
     args = config.get("args")
     callbacks: list[Any] = config.get("callbacks")
+    #[BUG:] ValueError: Some keys are not used by the HfArgumentParser: ['ignore_label', 'label_encoding', 'mask_format', 'mask_threshold', 'model_type', 'num_classes', 'output_format
+    #', 'seg_decoder_path', 'seg_token_idx', 'use_rle_masks']
     model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(args)
 
     callbacks.append(LogCallback())

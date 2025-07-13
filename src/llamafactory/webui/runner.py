@@ -244,6 +244,18 @@ class Runner:
             args["image_min_pixels"] = calculate_pixels(get("train.image_min_pixels"))
             args["video_max_pixels"] = calculate_pixels(get("train.video_max_pixels"))
             args["video_min_pixels"] = calculate_pixels(get("train.video_min_pixels"))
+        
+        #[DEBUG:dyzhou]segmentation config file(vlm_seg_sft.yaml) for vlm_seg models
+      
+        if get("top.model_type") == "vlm_seg":
+            args["seg_token_idx"] = get("train.seg_token_idx") if get("train.seg_token_idx") else None
+            args["use_rle_masks"] = get("train.use_rle_masks")
+            args["mask_format"] = get("train.mask_format")
+            args["output_format"] = get("train.output_format")
+            args["mask_threshold"] = float(get("train.mask_threshold"))
+            args["label_encoding"] = get("train.label_encoding")
+            args["num_classes"] = int(get("train.num_classes"))
+            args["ignore_label"] = int(get("train.ignore_label"))
 
         # galore config
         if args["use_galore"]:
