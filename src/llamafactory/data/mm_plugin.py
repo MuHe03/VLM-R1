@@ -1729,6 +1729,7 @@ PLUGINS = {
     "qwen2_omni": Qwen2OmniPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "video_llava": VideoLlavaPlugin,
+    "vlm_seg": Qwen2VLPlugin
 }
 
 

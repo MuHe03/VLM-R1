@@ -1,4 +1,4 @@
-from transformers import Qwen2_5_VLForConditionalGeneration,  Mask2FormerForUniversalSegmentation
+from transformers import Qwen2_5_VLForConditionalGeneration,  Mask2FormerForUniversalSegmentation, Mask2FormerConfig
 # [DEBUG/dyzhou]: import ModelOutput from transformers.utils
 from dataclasses import dataclass
 from transformers.utils import logging, ModelOutput
@@ -62,11 +62,15 @@ class QwenVLSeg(ModelOutput):
     vision_hidden_states: torch.FloatTensor = None
 
 class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
-    def __init__(self, config, seg_decoder_path="facebook/mask2former-swin-base"):
+    def __init__(self, config, seg_decoder_path=None):
+        print(config._name_or_path)
         super().__init__(config)
+        if seg_decoder_path is None:            # from‑scratch
+            seg_cfg = Mask2FormerConfig()       # uses default 100 queries & 1 class
+        else:                                   # reuse published hyper‑params only
+            seg_cfg = Mask2FormerConfig.from_pretrained(seg_decoder_path)
 
-        full_model      = Mask2FormerForUniversalSegmentation.from_pretrained(
-            seg_decoder_path, ignore_mismatched_sizes=True)
+        full_model = Mask2FormerForUniversalSegmentation(seg_cfg)
         self.seg_config = full_model.config
         self.seg_decoder = full_model.model.transformer_module.decoder
         self.class_predictor = full_model.class_predictor
@@ -102,10 +106,10 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         
         self.seg_token_id = None
         self._init_seg_token()
-        # ---- NEW: projection layers bridging LM ↔︎ Seg space ----
-        self.vis_proj   = nn.Linear(lm_dim, hid, bias=False)   # image patches
-        self.query_proj = nn.Linear(lm_dim, hid, bias=False)   # <SEG> tokens
         
+        self.vis_proj   = nn.Linear(lm_dim, hid, bias=False)   # image patches
+        self.query_proj = nn.Linear(lm_dim, hid, bias=False)   # [SEG] tokens
+
         self.query_feat   = nn.Embedding(self.seg_config.num_queries, hid)
         self.query_pos    = nn.Embedding(self.seg_config.num_queries, hid)
         
@@ -131,12 +135,23 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         self.register_parameter("vlm_seg_queries", self.query_source.weight)
         
     def _init_seg_token(self):
-        """Initialize the SEG token in the tokenizer vocabulary."""
+        """Initialize the SEG token, adding it to the tokenizer and resizing model embeddings if necessary."""
         if hasattr(self, 'get_tokenizer'):
             tokenizer = self.get_tokenizer()
             if tokenizer is not None:
-                self.seg_token_id = tokenizer.convert_tokens_to_ids('[SEG]')
-                logger.info(f"SEG token ID: {self.seg_token_id}")
+                seg_token = '[SEG]'
+                if seg_token not in tokenizer.vocab:
+                    logger.info(f"Adding '{seg_token}' to tokenizer vocabulary.")
+                    tokenizer.add_special_tokens({'additional_special_tokens': [seg_token]})
+                    new_vocab_size = len(tokenizer)
+                    self.resize_token_embeddings(new_vocab_size)
+                    self.config.vocab_size = new_vocab_size
+
+                self.seg_token_id = tokenizer.convert_tokens_to_ids(seg_token)
+                if self.seg_token_id == tokenizer.unk_token_id:
+                    logger.info(f"'{seg_token}' token not properly added or found.")
+                else:
+                    logger.info(f"'{seg_token}' token ID: {self.seg_token_id}")
     
     def get_tokenizer(self):
         """Get the tokenizer associated with this model."""
@@ -197,11 +212,11 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
             for f in multi_scale_feats
         ]
 
-        seg_token_id = kwargs.get('seg_token_id', self.seg_token_id)
-        if seg_token_id is not None and (input_ids == seg_token_id).any():
-            obj_q = last_hidden[(input_ids == seg_token_id)].view(B, -1, lm_dim)
+        if self.seg_token_id is not None and (input_ids == self.seg_token_id).any():
+            obj_q = last_hidden[(input_ids == self.seg_token_id)].view(B, -1, lm_dim)
             obj_q = self.query_proj(obj_q)
             query_pos = None
+            logger.info(f"Using SEG token for query projection.")
         else:
             obj_q = self.query_feat.weight.unsqueeze(0).expand(B, -1, hid)
             query_pos = self.query_pos.weight.unsqueeze(1).repeat(1, B, 1)
@@ -224,6 +239,23 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         class_logits = self.class_predictor(dec_out.last_hidden_state)
         mask_embeds  = self.seg_decoder.mask_predictor.mask_embedder(dec_out.last_hidden_state)
         seg_logits   = torch.einsum("bqc,bchw->bqhw", mask_embeds, mask_features)
+        
+        # --- DEBUG: log VLM outputs per sample ---
+        tokenizer = self.get_tokenizer() if hasattr(self, "get_tokenizer") else None
+        for idx in range(base_out.logits.size(0)):
+            txt_logits_sample = base_out.logits[idx]
+            seg_logits_sample = seg_logits[idx]
+            if tokenizer is not None:
+                pred_ids = txt_logits_sample.argmax(dim=-1)
+                text_out = tokenizer.decode(pred_ids, skip_special_tokens=False)
+            else:
+                text_out = "<tokenizer unavailable>"
+            text_in = tokenizer.decode(input_ids[idx], skip_special_tokens=False)
+            logger.info(
+                f"[DEBUG] Sample {idx}:"
+                f"           text logits shape {txt_logits_sample.shape}, "
+                f"seg logits shape {seg_logits_sample.shape}, class logits shape {class_logits[idx].shape}"
+            )
 
         if seg_logits.shape[-2:] != pixel_values.shape[-2:]:
             seg_logits = F.interpolate(seg_logits, size=pixel_values.shape[-2:],
@@ -253,9 +285,12 @@ def build_vlm_seg_model(config, *args, **kwargs):
         seg_decoder_path = kwargs.pop("seg_decoder_path")
     if seg_decoder_path is None:
         seg_decoder_path = "facebook/mask2former-swin-large-ade-semantic"
+
+    print(seg_decoder_path)
     return QwenVLSegForConditionalGeneration.from_pretrained(
         config._name_or_path,
         config=config,
         seg_decoder_path=seg_decoder_path,
+        ignore_mismatched_sizes=True,
         *args, **kwargs
     )
