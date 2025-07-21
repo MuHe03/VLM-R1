@@ -407,6 +407,7 @@ class ModelArguments(
     )
     # [DEBUG:dyzhou] add segmentation-specific arguments
     # segmentation-specific arguments
+    # segmentation flags
     model_type: Optional[str] = field(
         default=None,
         metadata={"help": "Type of model, e.g., vlm_seg"}
@@ -442,6 +443,23 @@ class ModelArguments(
     ignore_label: Optional[int] = field(
         default=255,
         metadata={"help": "Label value to ignore"}
+    )
+    # --- New flags for VLM-Seg modes ---
+    continue_training: bool = field(
+        default=False,
+        metadata={"help": "Load full model for continuing training without reinitializing seg decoder."}
+    )
+    evaluation: bool = field(
+        default=False,
+        metadata={"help": "Switch model to evaluation-only mode (no loss computation)."}
+    )
+    num_queries: Optional[int] = field(
+        default=100,
+        metadata={"help": "Number of object queries for Mask2Former."}
+    )
+    seg_hidden_dim: Optional[int] = field(
+        default=256,
+        metadata={"help": "Hidden dimension used in segmentation decoder (Mask2Former)."}
     )
     seg_decoder_path: Optional[str] = field(
         default=None,

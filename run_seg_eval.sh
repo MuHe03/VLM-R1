@@ -9,12 +9,11 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3  # Adjust based on your GPU setup
 export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
 
 # Configuration
-MODEL_PATH="saves/custom_seg_s/full/sft/checkpoint-20000"  # Adjust to your model path
-VAL_DATA_PATH="Qwen_val.json"  # Path to your validation data
+MODEL_PATH="saves/custom_seg_2/full/sft/checkpoint-20000"  # Adjust to your model path
+VAL_DATA_PATH="../Qwen_val.json"  # Path to your validation data
 OUTPUT_DIR="./logs/seg_evaluation"
 BATCH_SIZE=1
-DEVICE_MAP="cuda:0,cuda:1,cuda:2,cuda:3"  # Adjust based on your GPU setup
-
+ 
 # Create output directory
 mkdir -p ${OUTPUT_DIR}
 
@@ -22,13 +21,13 @@ echo "Starting segmentation evaluation..."
 echo "Model path: ${MODEL_PATH}"
 echo "Validation data: ${VAL_DATA_PATH}"
 echo "Output directory: ${OUTPUT_DIR}"
-
+NUM_GPUS=4
 # Run evaluation
-python scripts/eval_segmentation.py \
+torchrun --standalone --nnodes=1 --nproc_per_node=$NUM_GPUS \
+    scripts/eval_segmentation.py \
     --model_path ${MODEL_PATH} \
     --val_data_path ${VAL_DATA_PATH} \
     --output_dir ${OUTPUT_DIR} \
-    --batch_size ${BATCH_SIZE} \
-    --device_map ${DEVICE_MAP}
+    --batch_size ${BATCH_SIZE}
 
 echo "Evaluation completed. Results saved to ${OUTPUT_DIR}" 

@@ -65,10 +65,16 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
     def __init__(self, config, seg_decoder_path=None):
         print(config._name_or_path)
         super().__init__(config)
-        if seg_decoder_path is None:            # from‑scratch
-            seg_cfg = Mask2FormerConfig()       # uses default 100 queries & 1 class
-        else:                                   # reuse published hyper‑params only
-            seg_cfg = Mask2FormerConfig.from_pretrained(seg_decoder_path)
+        # Prepare segmentation config
+        if seg_decoder_path is None:  # from scratch – build with values in `config`
+            seg_decoder_path = "facebook/mask2former-swin-large-ade-semantic"
+        seg_cfg = Mask2FormerConfig.from_pretrained(seg_decoder_path)
+        # If the training YAML specified different values, honour them
+        if hasattr(config, "num_classes") and config.num_classes is not None:
+            seg_cfg.num_labels = config.num_classes
+        if hasattr(config, "seg_hidden_dim") and config.seg_hidden_dim is not None:
+            seg_cfg.hidden_dim = config.seg_hidden_dim
+
 
         full_model = Mask2FormerForUniversalSegmentation(seg_cfg)
         self.seg_config = full_model.config
@@ -115,7 +121,7 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         
         self.pos_embedder = Mask2FormerSinePositionEmbedding(
                                 num_pos_feats=hid // 2, normalize=True)
-
+        
     def _ensure_query_embeddings(self, hidden_dim):
         """
         Guarantee that `self.seg_decoder` exposes a learnable query tensor.
@@ -164,14 +170,17 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
             logger.info(f"No SEG token Found!")
             return None
 
-    def forward(self, pixel_values=None, input_ids=None, masks=None, class_labels=None, **kwargs):
+    def forward(self, pixel_values=None, input_ids=None, masks=None, class_labels=None, compute_loss: bool | None = None, **kwargs):
+        return_dict_flag = kwargs.pop("return_dict", True)
+        output_hidden_states_flag = kwargs.pop("output_hidden_states", True)
         base_out = super().forward(
             pixel_values=pixel_values,
             input_ids=input_ids,
-            output_hidden_states=True,
-            return_dict=True,
+            output_hidden_states=output_hidden_states_flag,
+            return_dict=return_dict_flag,
             **kwargs,
         )
+        print(input_ids)
         
         img_tok = self.config.image_token_id
         lm_dim = self.config.hidden_size 
@@ -180,10 +189,13 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         last_hidden = base_out.hidden_states[-1]
         B, L, D = last_hidden.shape
         
+        print("vis_mask: ", vis_mask)
+
         vis_tokens = last_hidden[vis_mask].view(B, -1, lm_dim)
         vis_tokens = self.vis_proj(vis_tokens)
 
         num_patches = vis_tokens.size(1)
+        print("num_patches: ", num_patches)
         H = int(round(num_patches ** 0.5))
         while H > 0 and num_patches % H != 0:
             H -= 1
@@ -261,15 +273,20 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
             seg_logits = F.interpolate(seg_logits, size=pixel_values.shape[-2:],
                                         mode="bilinear", align_corners=False)
 
-        total_loss = base_out.loss or torch.tensor(0.0, device=seg_logits.device)
-        if masks is not None:
-            total_loss += dice_loss(seg_logits, masks)
-        if class_labels is not None:
-            flat_logits = class_logits.view(-1, class_logits.size(-1))
-            flat_labels = class_labels.view(-1)
-            valid = flat_labels >= 0
-            if valid.any():
-                total_loss += focal_loss(flat_logits[valid], flat_labels[valid])
+        compute_loss = self.training if compute_loss is None else compute_loss
+
+        if compute_loss:
+            total_loss = base_out.loss or torch.tensor(0.0, device=seg_logits.device)
+            if masks is not None:
+                total_loss += dice_loss(seg_logits, masks)
+            if class_labels is not None:
+                flat_logits = class_logits.view(-1, class_logits.size(-1))
+                flat_labels = class_labels.view(-1)
+                valid = flat_labels >= 0
+                if valid.any():
+                    total_loss += focal_loss(flat_logits[valid], flat_labels[valid])
+        else:
+            total_loss = None
 
         return QwenVLSeg(
             loss=total_loss,
@@ -280,7 +297,53 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         )
 
 def build_vlm_seg_model(config, *args, **kwargs):
-    seg_decoder_path = getattr(config, "seg_decoder_path", None)
+    """Utility to build the VLM-Seg model with optional modes.
+
+    Keyword Args:
+        continue_training (bool): If True, load the full model from the
+            checkpoint pointed to by ``config._name_or_path`` without
+            initializing a fresh segmentation decoder.  This is useful when
+            resuming training from a previously saved distributed checkpoint.
+        evaluation (bool): If True, the returned model will be put into
+            ``eval()`` mode immediately.
+    """
+    continue_training = kwargs.pop("continue_training", False)
+    evaluation = kwargs.pop("evaluation", False)
+
+    if continue_training:
+        # Do NOT override `config` so that the checkpoint's own hyper-params
+        # (e.g. num_classes, hidden_dim) are kept intact.
+        model, load_info = QwenVLSegForConditionalGeneration.from_pretrained(
+            config._name_or_path,
+            ignore_mismatched_sizes=False,   # strict loading
+            output_loading_info=True,
+            *args,
+            **kwargs,
+        )
+        miss = load_info.get("missing_keys", [])
+        unexp = load_info.get("unexpected_keys", [])
+        logger.info(
+            f"[VLM-Seg] Loaded checkpoint with {len(miss)} missing and {len(unexp)} unexpected keys."
+        )
+    else:
+        seg_decoder_path = getattr(config, "seg_decoder_path", None)
+        if seg_decoder_path is None and "seg_decoder_path" in kwargs:
+            seg_decoder_path = kwargs.pop("seg_decoder_path")
+        if seg_decoder_path is None:
+            seg_decoder_path = "facebook/mask2former-swin-large-ade-semantic"
+
+        model = QwenVLSegForConditionalGeneration.from_pretrained(
+            config._name_or_path,
+            config=config,
+            seg_decoder_path=seg_decoder_path,
+            ignore_mismatched_sizes=True,
+            *args,
+            **kwargs,
+        )
+
+    if evaluation:
+        model.eval()
+    return model
     if seg_decoder_path is None and "seg_decoder_path" in kwargs:
         seg_decoder_path = kwargs.pop("seg_decoder_path")
     if seg_decoder_path is None:

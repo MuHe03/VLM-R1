@@ -25,6 +25,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 from llamafactory.model.vlm_seg import QwenVLSegForConditionalGeneration
 from transformers import AutoTokenizer, AutoProcessor
 from pycocotools import mask as maskUtils
+from copy import deepcopy
+from llamafactory.extras.constants import IMAGE_PLACEHOLDER
+# Import multimodal plugin for processing images and messages
+from llamafactory.data.mm_plugin import get_mm_plugin
+from llamafactory.data.template import TEMPLATES
 
 
 def setup_distributed():
@@ -190,14 +195,18 @@ def rle_to_mask(rle: Dict[str, Any]) -> np.ndarray:
 
 def load_model_and_tokenizer(model_path: str, device: str):
     """Load the segmentation model and tokenizer"""
+    # Resolve model path to an absolute path to ensure every distributed rank can locate it.
+    model_path = os.path.abspath(os.path.expanduser(model_path))
     print(f"Loading model from {model_path}")
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Resolved model path does not exist: {model_path}")
     
     # Load model
     model = QwenVLSegForConditionalGeneration.from_pretrained(
         model_path,
-        
+
         torch_dtype=torch.bfloat16,
-        ignore_mismatched_sizes=True,
+        ignore_mismatched_sizes=False,
         device_map={"": device},
     )
     
@@ -229,6 +238,10 @@ def evaluate_segmentation(
     # Load model
     model, tokenizer, processor = load_model_and_tokenizer(model_path, device)
     model.eval()
+    plugin = get_mm_plugin(name="vlm_seg", image_token="<|image_pad|>", video_token="<|video_pad|>")
+    # Fetch segmentation chat template
+    seg_template = TEMPLATES["vlm_seg"]
+    system_prompt = seg_template.default_system
     
     # Load validation data
     with open(val_data_path, 'r', encoding='utf-8') as f:
@@ -264,29 +277,57 @@ def evaluate_segmentation(
                 print(f"Image not found: {image_path}")
                 continue
             
-            # Prepare input
-            messages = [
-                {"role": "user", "content": user_content}
-            ]
-            
-            # Generate response
-            with torch.no_grad():
-                inputs = processor(
-                    messages=messages,
-                    images=image,
-                    return_tensors="pt"
-                ).to(device)
+            # Use plugin to prepare multimodal inputs (text + image tensors)
+            try:
+                # Ensure the user message contains an IMAGE_PLACEHOLDER to match the supplied image
+                msgs_in = deepcopy(sample['messages'])
+                if IMAGE_PLACEHOLDER not in msgs_in[0]['content']:
+                    msgs_in[0]['content'] = IMAGE_PLACEHOLDER + " " + msgs_in[0]['content']
+                processed_msgs = plugin.process_messages(
+                    messages=msgs_in,
+                    images=[image],
+                    videos=[],
+                    audios=[],
+                    processor=processor
+                )
+                # Use template to encode messages
+                prompt_ids, _ = seg_template.encode_oneturn(
+                    tokenizer=tokenizer,
+                    messages=processed_msgs,
+                    system=system_prompt,
+                    tools=None
+                )
+
+                inputs = {
+                    "input_ids": torch.tensor([prompt_ids], device=device),
+                    "attention_mask": torch.ones(1, len(prompt_ids), device=device)
+                }
+
+                mm_inputs = plugin._get_mm_inputs([image], [], [], processor)
+                inputs.update(mm_inputs)
+                print(inputs)
+
+            except Exception as e:
+                print(f"Plugin or template processing failed, fallback to simple processing. Error: {e}")
+                prompt_content = user_content
+                if all(tok not in prompt_content for tok in ["<|image_start|>", "<|image_end|>", IMAGE_PLACEHOLDER]):
+                    prompt_content = IMAGE_PLACEHOLDER + " " + prompt_content
                 
-                outputs = model.generate(
+                inputs = processor(text=[prompt_content], images=[image], return_tensors="pt").to(device)
+            
+            with torch.no_grad():
+                inputs = {k: v.to(device) if torch.is_tensor(v) else v for k, v in inputs.items()}
+                print(f"sample: {sample}")
+                print(inputs)
+
+                output_ids = model.generate(
                     **inputs,
                     max_new_tokens=512,
                     do_sample=False,
-                    temperature=0.0,
                     pad_token_id=tokenizer.eos_token_id
                 )
-                
-                response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
+                response = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+
             # Extract predicted mask
             pred_rle = extract_rle_mask(response)
             gt_rle = extract_rle_mask(assistant_content)

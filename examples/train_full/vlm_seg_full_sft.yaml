@@ -1,9 +1,14 @@
 ### model
 model_type: vlm_seg
-model_name_or_path: saves/custom_seg_2/full/sft/checkpoint-20000
+model_name_or_path: saves/custom_seg_2_2/full/sft/checkpoint-15000
+seg_decoder_path: facebook/mask2former-swin-large-ade-semantic
 image_max_pixels: 262144
 trust_remote_code: true
 template: vlm_seg
+num_classes: 151
+seg_hidden_dim: 256
+
+continue_training: true # uncomment when resuming from a checkpoint
 
 ### method
 stage: sft
@@ -18,14 +23,14 @@ deepspeed: examples/deepspeed/ds_z3_config.json
 dataset: custom_dataset
 dataset_dir: data
 cutoff_len: 2048
-max_samples: 1000
+# max_samples: 1000
 overwrite_cache: true
 preprocessing_num_workers: 48
 dataloader_num_workers: 24
 
 ### output
-output_dir: saves/custom_seg_2_2/full/sft
-logging_steps: 10
+output_dir: saves/custom_seg_2_3/full/sft
+logging_steps: 100
 save_steps: 10000
 plot_loss: true
 overwrite_output_dir: true
@@ -49,9 +54,7 @@ use_rle_masks: true  # 使用RLE编码的掩码
 mask_format: "rle"  # 掩码格式为RLE
 output_format: "rle"  # 输出格式为RLE
 mask_threshold: 0.5  # 二值化阈值
-label_encoding: "binary"  # 标签编码方式：binary/categorical
-num_classes: 1  # 分割类别数
-ignore_label: 255  # 忽略的标签值 
+label_encoding: "categorical"  # 标签编码方式：binary/categorical
 
 disable_gradient_checkpointing: true   # turns CP off completely :contentReference[oaicite:0]{index=0}
 use_reentrant_gc: false                # (optional) keep CP on but non-re-entrant :contentReference[oaicite:1]{index=1}
