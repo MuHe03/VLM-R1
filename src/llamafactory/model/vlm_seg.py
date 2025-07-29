@@ -16,29 +16,38 @@ logger = logging.get_logger(__name__)
 
 def dice_loss(pred_logits, target_masks, smooth=1e-6):
     """
-    Compute dice loss for segmentation.
+    Compute dice loss for query-based segmentation (Mask2Former style).
     
     Args:
-        pred_logits: Predicted logits from segmentation model
-        target_masks: Ground truth masks
-        smooth: Smoothing factor to avoid division by zero
-        
-    Returns:
-        Dice loss value
+        pred_logits: [B, Q, H, W] - Q queries predicting masks
+        target_masks: [B, H, W] - Ground truth binary masks
+        smooth: Smoothing factor
     """
-    # Apply softmax to get probabilities
-    pred_probs = F.softmax(pred_logits, dim=1)
     
-    # Flatten tensors
-    pred_flat = pred_probs.view(-1)
-    target_flat = target_masks.view(-1)
+    B, Q, H, W = pred_logits.shape
     
-    # Calculate dice coefficient
-    intersection = (pred_flat * target_flat).sum()
-    dice_coeff = (2. * intersection + smooth) / (pred_flat.sum() + target_flat.sum() + smooth)
+    # Apply sigmoid to get probabilities for each query
+    pred_probs = torch.sigmoid(pred_logits)  # [B, Q, H, W]
     
-    # Return dice loss (1 - dice coefficient)
-    return 1 - dice_coeff
+    # Expand target masks to match queries: [B, H, W] -> [B, Q, H, W]
+    target_expanded = target_masks.unsqueeze(1).expand(-1, Q, -1, -1)  # [B, Q, H, W]
+    
+    # Flatten spatial dimensions
+    pred_flat = pred_probs.view(B, Q, -1)  # [B, Q, H*W]
+    target_flat = target_expanded.view(B, Q, -1).float()  # [B, Q, H*W]
+    
+    # Compute dice for each query
+    intersection = (pred_flat * target_flat).sum(dim=2)  # [B, Q]
+    pred_sum = pred_flat.sum(dim=2)  # [B, Q]
+    target_sum = target_flat.sum(dim=2)  # [B, Q]
+    
+    dice_per_query = (2. * intersection + smooth) / (pred_sum + target_sum + smooth)  # [B, Q]
+    
+    # Take the best dice score across queries for each batch item
+    best_dice, _ = dice_per_query.max(dim=1)  # [B]
+    
+    # Return dice loss (1 - best dice coefficient)
+    return 1 - best_dice.mean()
 
 def focal_loss(inputs, targets, alpha=0.25, gamma=2.0, reduction='mean'):
     """Focal loss for class imbalance"""
@@ -60,11 +69,16 @@ class QwenVLSeg(ModelOutput):
     seg_logits: torch.FloatTensor = None    # H×W or queries
     class_logits: torch.FloatTensor = None  # class predictions
     vision_hidden_states: torch.FloatTensor = None
+    seg_loss: torch.FloatTensor = None      # segmentation loss for wandb logging
+    class_loss: torch.FloatTensor = None    # class loss for potential logging
 
 class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
     def __init__(self, config, seg_decoder_path=None):
         print(config._name_or_path)
         super().__init__(config)
+        
+        # Set model type to vlm_seg for proper recognition
+        config.model_type = "vlm_seg"
         # Prepare segmentation config
         if seg_decoder_path is None:  # from scratch – build with values in `config`
             seg_decoder_path = "facebook/mask2former-swin-large-ade-semantic"
@@ -85,16 +99,14 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
         lm_dim = config.hidden_size 
 
         self.pyr_convs = nn.ModuleList([
+            nn.Identity(),                         # keep stride 16 as is
             nn.Sequential(
-                nn.Conv2d(hid, hid, 1), nn.GroupNorm(32, hid)
+                nn.ConvTranspose2d(hid, hid, 2, 2),  # ×2 → stride 8
+                nn.GroupNorm(32, hid)
             ),
             nn.Sequential(
-                nn.Conv2d(hid, hid, 3, stride=2, padding=1, groups=hid),
-                nn.Conv2d(hid, hid, 1), nn.GroupNorm(32, hid)
-            ),
-            nn.Sequential(
-                nn.Conv2d(hid, hid, 3, stride=2, padding=1, groups=hid),
-                nn.Conv2d(hid, hid, 1), nn.GroupNorm(32, hid)
+                nn.ConvTranspose2d(hid, hid, 2, 2),  # ×2 → stride 4
+                nn.GroupNorm(32, hid)
             ),
         ])
 
@@ -180,22 +192,25 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
             return_dict=return_dict_flag,
             **kwargs,
         )
-        print(input_ids)
+        # print(input_ids)
         
         img_tok = self.config.image_token_id
         lm_dim = self.config.hidden_size 
         hid = self.seg_config.hidden_dim
         vis_mask = (input_ids == img_tok)
+        if not vis_mask.any():
+            return base_out
+
         last_hidden = base_out.hidden_states[-1]
         B, L, D = last_hidden.shape
         
-        print("vis_mask: ", vis_mask)
+        # print("vis_mask: ", vis_mask)
 
         vis_tokens = last_hidden[vis_mask].view(B, -1, lm_dim)
         vis_tokens = self.vis_proj(vis_tokens)
 
         num_patches = vis_tokens.size(1)
-        print("num_patches: ", num_patches)
+        # print("num_patches: ", num_patches)
         H = int(round(num_patches ** 0.5))
         while H > 0 and num_patches % H != 0:
             H -= 1
@@ -263,28 +278,53 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
             else:
                 text_out = "<tokenizer unavailable>"
             text_in = tokenizer.decode(input_ids[idx], skip_special_tokens=False)
+            # Debug mask and class label shapes
+            mask_shape_str = f"masks[{idx}].shape = {masks[idx].shape}" if masks is not None else "masks = None"
+            class_shape_str = f"class_labels[{idx}].shape = {class_labels[idx].shape}" if class_labels is not None else "class_labels = None"
+            
             logger.info(
-                f"[DEBUG] Sample {idx}:"
-                f"           text logits shape {txt_logits_sample.shape}, "
-                f"seg logits shape {seg_logits_sample.shape}, class logits shape {class_logits[idx].shape}"
+                f"[DEBUG] Sample {idx}:\n"
+                f"          text_in:  {text_in}\n"
+                f"          text_out: {text_out}\n"
+                f"          text logits shape: {txt_logits_sample.shape}\n"
+                f"          seg logits shape: {seg_logits_sample.shape}\n"
+                f"          class logits shape: {class_logits[idx].shape}\n"
+                f"          {mask_shape_str}\n"
+                f"          {class_shape_str}"
             )
 
-        if seg_logits.shape[-2:] != pixel_values.shape[-2:]:
+        if pixel_values is not None and seg_logits.shape[-2:] != pixel_values.shape[-2:]:
             seg_logits = F.interpolate(seg_logits, size=pixel_values.shape[-2:],
                                         mode="bilinear", align_corners=False)
+        
+        # Resize target masks to match segmentation logits resolution if needed
+        if masks is not None and seg_logits.shape[-2:] != masks.shape[-2:]:
+            # logger.info(f"Resizing target masks from {masks.shape[-2:]} to {seg_logits.shape[-2:]}")
+            masks = F.interpolate(masks.unsqueeze(1), size=seg_logits.shape[-2:], 
+                                mode="nearest").squeeze(1)
 
         compute_loss = self.training if compute_loss is None else compute_loss
 
+        # Compute losses separately for logging
+        seg_loss = None
+        class_loss = None
+        
         if compute_loss:
             total_loss = base_out.loss or torch.tensor(0.0, device=seg_logits.device)
+            
+            # Compute segmentation loss separately
             if masks is not None:
-                total_loss += dice_loss(seg_logits, masks)
+                seg_loss = dice_loss(seg_logits, masks)
+                total_loss += seg_loss
+            
+            # Compute class loss separately
             if class_labels is not None:
                 flat_logits = class_logits.view(-1, class_logits.size(-1))
                 flat_labels = class_labels.view(-1)
                 valid = flat_labels >= 0
                 if valid.any():
-                    total_loss += focal_loss(flat_logits[valid], flat_labels[valid])
+                    class_loss = focal_loss(flat_logits[valid], flat_labels[valid])
+                    total_loss += class_loss
         else:
             total_loss = None
 
@@ -294,6 +334,8 @@ class QwenVLSegForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
             seg_logits=seg_logits,
             class_logits=class_logits,
             vision_hidden_states=vis_tokens,
+            seg_loss=seg_loss,  # Add segmentation loss for wandb logging
+            class_loss=class_loss,  # Add class loss for potential logging
         )
 
 def build_vlm_seg_model(config, *args, **kwargs):
@@ -344,16 +386,3 @@ def build_vlm_seg_model(config, *args, **kwargs):
     if evaluation:
         model.eval()
     return model
-    if seg_decoder_path is None and "seg_decoder_path" in kwargs:
-        seg_decoder_path = kwargs.pop("seg_decoder_path")
-    if seg_decoder_path is None:
-        seg_decoder_path = "facebook/mask2former-swin-large-ade-semantic"
-
-    print(seg_decoder_path)
-    return QwenVLSegForConditionalGeneration.from_pretrained(
-        config._name_or_path,
-        config=config,
-        seg_decoder_path=seg_decoder_path,
-        ignore_mismatched_sizes=True,
-        *args, **kwargs
-    )

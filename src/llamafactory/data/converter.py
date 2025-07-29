@@ -241,10 +241,10 @@ class SegmentationDatasetConverter(DatasetConverter):
             "masks": [np.array]  # Optional, can be empty
         }
         """
-        # Get conversations, images, and masks from the example
+        # Get conversations, images, and rle_mask from the example
         conversations = example.get(self.dataset_attr.prompt, [])
         images = example.get(self.dataset_attr.images, [])
-        masks = example.get("masks", [])
+        rle_mask = example.get("rle_mask", None)
         
         # Process conversations into prompt and response
         prompt = []
@@ -266,7 +266,7 @@ class SegmentationDatasetConverter(DatasetConverter):
             "_system": "",  # No system message in custom dataset
             "_tools": "",   # No tools in custom dataset
             "_images": self._find_medias(images) if images else None,
-            "_masks": masks if masks else None,
+            "rle_mask": rle_mask,  # Preserve rle_mask field for segmentation
             "_videos": None,  # No videos in custom dataset
             "_audios": None,  # No audios in custom dataset
         }

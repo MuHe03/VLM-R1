@@ -21,6 +21,7 @@
 from typing import TYPE_CHECKING, Optional, List
 
 from llamafactory.data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
+from llamafactory.data.seg_collator import SegmentationDataCollator
 from llamafactory.hparams import (
     ModelArguments,
     DataArguments,
@@ -75,16 +76,29 @@ def run_sft(
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
 
-    data_collator = SFTDataCollatorWith4DAttentionMask(
-        template=template,
-        model=model if not training_args.predict_with_generate else None,
-        pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
-        label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
-        block_diag_attn=model_args.block_diag_attn,
-        attn_implementation=getattr(model.config, "_attn_implementation", None),
-        compute_dtype=model_args.compute_dtype,
-        **tokenizer_module,
-    )
+    # Use segmentation data collator for VLM segmentation models
+    if model_args.model_type == "vlm_seg":
+        data_collator = SegmentationDataCollator(
+            template=template,
+            model=model if not training_args.predict_with_generate else None,
+            pad_to_multiple_of=8 if training_args.do_train else None,
+            label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+            block_diag_attn=model_args.block_diag_attn,
+            attn_implementation=getattr(model.config, "_attn_implementation", None),
+            compute_dtype=model_args.compute_dtype,
+            **tokenizer_module,
+        )
+    else:
+        data_collator = SFTDataCollatorWith4DAttentionMask(
+            template=template,
+            model=model if not training_args.predict_with_generate else None,
+            pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
+            label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+            block_diag_attn=model_args.block_diag_attn,
+            attn_implementation=getattr(model.config, "_attn_implementation", None),
+            compute_dtype=model_args.compute_dtype,
+            **tokenizer_module,
+        )
 
     # Metric utils
     metric_module = {}

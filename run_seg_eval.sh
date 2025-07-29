@@ -9,8 +9,8 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3  # Adjust based on your GPU setup
 export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
 
 # Configuration
-MODEL_PATH="saves/custom_seg_2/full/sft/checkpoint-20000"  # Adjust to your model path
-VAL_DATA_PATH="../Qwen_val.json"  # Path to your validation data
+MODEL_PATH="saves/custom_seg_3/full/sft/checkpoint-1250"  # Adjust to your model path
+VAL_DATA_PATH="./Qwen_val.json"  # Path to your validation data
 OUTPUT_DIR="./logs/seg_evaluation"
 BATCH_SIZE=1
  

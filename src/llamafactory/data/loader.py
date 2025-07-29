@@ -263,6 +263,13 @@ def _get_preprocessed_dataset(
         data_args, stage, template, tokenizer, processor, do_generate=(training_args.predict_with_generate and is_eval)
     )
     column_names = list(next(iter(dataset)).keys())
+    
+    # For segmentation models, preserve the rle_mask field
+    remove_columns = column_names.copy()
+    if hasattr(template, 'name') and template.name == 'vlm_seg' and 'rle_mask' in column_names:
+        remove_columns.remove('rle_mask')
+        logger.info_rank0("Preserving rle_mask field for segmentation model")
+    
     kwargs = {}
     if not data_args.streaming:
         kwargs = dict(
@@ -275,7 +282,7 @@ def _get_preprocessed_dataset(
         dataset_processor.preprocess_dataset,
         batched=True,
         batch_size=data_args.preprocessing_batch_size,
-        remove_columns=column_names,
+        remove_columns=remove_columns,
         **kwargs,
     )
 

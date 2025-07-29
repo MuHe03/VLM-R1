@@ -168,21 +168,86 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
 
 
 class SegmentationTrainer(CustomSeq2SeqTrainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
-        pixel_values = inputs.get("pixel_values", None) or inputs.get("images", None)
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        # Debug all input keys and shapes
+        logger.info(f"[DEBUG] Input keys: {list(inputs.keys())}")
+        for key, value in inputs.items():
+            if hasattr(value, 'shape'):
+                logger.info(f"[DEBUG] {key} shape: {value.shape}")
+            else:
+                logger.info(f"[DEBUG] {key} type: {type(value)}")
+        
+        pixel_values = inputs.get("pixel_values", None)
+        if pixel_values is None:
+            pixel_values = inputs.get("images", None)
+        
+        # Debug pixel_values shape
+        if pixel_values is not None:
+            logger.info(f"[DEBUG] pixel_values shape: {pixel_values.shape}")
+            logger.info(f"[DEBUG] pixel_values type: {type(pixel_values)}")
+            
+            # Handle unexpected pixel_values shape
+            if len(pixel_values.shape) != 4:
+                logger.warning(f"[DEBUG] Unexpected pixel_values shape: {pixel_values.shape}, expected 4D tensor")
+                # Check if we have the wrong tensor - look for the actual image tensor
+                for key, value in inputs.items():
+                    if hasattr(value, 'shape') and len(value.shape) == 4:
+                        logger.info(f"[DEBUG] Found 4D tensor in key '{key}' with shape {value.shape}")
+                        if 'image' in key.lower() or 'pixel' in key.lower():
+                            logger.info(f"[DEBUG] Using {key} as pixel_values")
+                            pixel_values = value
+                            break
+        
         masks = inputs.get("masks", None)
         class_labels = inputs.get("class_labels", None)
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
         labels = inputs.get("labels", None)
+        image_grid_thw = inputs.get("image_grid_thw", None)
 
         outputs = model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             pixel_values=pixel_values,
+            image_grid_thw=image_grid_thw,
             masks=masks,
             class_labels=class_labels,
             labels=labels,
         )
         loss = outputs.loss
+        
+        # Extract and log segmentation loss for wandb
+        seg_loss = None
+        if hasattr(outputs, 'seg_loss') and outputs.seg_loss is not None:
+            seg_loss = outputs.seg_loss
+            
+            # Log segmentation loss to wandb if available
+            if self.state.is_world_process_zero and self.args.report_to and "wandb" in self.args.report_to:
+                try:
+                    import wandb
+                    if wandb.run is not None:
+                        wandb.log({
+                            "train/seg_loss": seg_loss.item(),
+                            "train/step": self.state.global_step
+                        })
+                        logger.info(f"Step {self.state.global_step}: seg_loss = {seg_loss.item():.6f}")
+                except ImportError:
+                    logger.warning("wandb not available for logging segmentation loss")
+        
+        # Store seg_loss for potential use in logging callback
+        if seg_loss is not None:
+            self._last_seg_loss = seg_loss.item()
+        
         return (loss, outputs) if return_outputs else loss
+    
+    def log(self, logs, start_time=None):
+        """Override log method to include segmentation loss."""
+        # Add segmentation loss to logs if available
+        if hasattr(self, '_last_seg_loss'):
+            logs["seg_loss"] = self._last_seg_loss
+        
+        # Call parent log method with proper signature
+        if start_time is not None:
+            super().log(logs, start_time)
+        else:
+            super().log(logs)
